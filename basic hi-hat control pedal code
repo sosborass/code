@@ -1,0 +1,91 @@
+// BASIC HI HAT CONTROL PEDAL, just open and closed , no in between states.
+// this version switches the MIDI note being triggered by a piezo when the pedal is pressed / not pressed. The piezo would be the one used for your hi-hat in a very simple setup.
+// Because we're using the internal pullup-resistor, the switch logic is reversed, so we will use low value as PRESSED and the high value as not pressed.
+// This code only adds a function for the LOW state, because when the pedal is HIGH (not pressed) we want it to do nothing. However it does send a note-off message on release of the pedal press.
+
+//BASED ON: Button Press Detection - debounce with millis() from https://www.instructables.com/id/Intermediate-Arduino-Inputs-and-Outputs/ & Arduino, Sensors, and MIDI from https://www.instructables.com/id/Arduino-Sensors-and-MIDI/ by Amanda Ghassaei
+// AND the concepts here for using the internal pull-up resistors https://www.arduino.cc/en/Tutorial/InputPullupSerial
+
+
+int noteOn = 144;
+int noteOFF = 128;
+
+int piezo = A1;
+int threshold = 5;      //anything over the threshold means we've hit the piezo
+
+byte hihatNote = 46;    // open hi-hat note (in my DAW, some will be different)
+
+int pedalPin = 7;              // variable storing the pin number that our pedal is connected to
+
+boolean currentState = LOW;       // stroage for current measured pedal state
+boolean lastState = LOW;          // storage for last measured pedal state
+boolean debouncedState = LOW;     // debounced pedal state
+
+int debounceInterval = 20;                        // wait 20 ms for pedal pin to settle
+unsigned long timeOfLastButtonEvent = 0;          // store the last time the pedal state changed
+
+void setup(){
+  pinMode(pedalPin, INPUT_PULLUP);        // sets the pedal pin as an INPUT, and engages the internal pull-up resistor, to keep the button's HIGH state at 5V.
+  Serial.begin(31250);                     // Initialize serial connection as MIDI rate if using a MIDI output jack
+                                           // if using hairless serial to MIDI bridge. https://projectgus.github.io/hairless-midiserial/, replace the rate with 9600.
+}
+
+void loop(){
+  
+  currentState = digitalRead(pedalPin);
+  unsigned long currentTime = millis();
+  
+  if (currentState != lastState){
+    timeOfLastButtonEvent = currentTime;
+  }
+  
+  if (currentTime - timeOfLastButtonEvent > debounceInterval){            // if enough time has passed
+    if (currentState != debouncedState){                                  // if the current state is still different than our last stored debounced state
+      debouncedState = currentState;                                      // update the debounced state
+      
+                                                                          // Code to trigger an event
+      if (debouncedState == LOW){
+        MIDImessage(noteOn, 44, 127);                               // send note on 44 - hi-hat pedal, with 127 velocity
+        hihatNote = 42;                                             // if the pedal is pressed, set the hi-hat note to closed hi-hat (42 on my DAW) for as long as it's pressed
+        
+      } else {
+        
+        MIDImessage(noteOFF, 44, 0);                                 // send note off 44 - hi-hat pedal
+        hihatNote = 46;                                              // change the hi-hat note back to open hi-hat ( 46 )
+        
+      }
+    }
+  }
+
+  lastState = currentState;
+
+  int piezoVal = analogRead(piezo);
+  
+  if (piezoVal>threshold){
+    int maxPiezoVal = getMaxVal(piezoVal);
+    byte velocity = map(maxPiezoVal, 0, 1023, threshold, 127);         //velocity between threshold and 127 based on max val from piezo
+    MIDImessage(noteOn, hihatNote, velocity);
+    delay (100);
+    MIDImessage(noteOFF, hihatNote, 0);
+  }
+
+}
+
+//send MIDI message
+
+void MIDImessage(byte command, byte data1, byte data2)
+{
+  Serial.write(command);
+  Serial.write(data1);
+  Serial.write(data2);
+}
+
+int getMaxVal(int lastVal){
+  int currentVal = analogRead(piezo);
+  
+  while (currentVal>lastVal){
+    lastVal = currentVal;
+    currentVal = analogRead(piezo);
+  }
+  return lastVal;
+}
