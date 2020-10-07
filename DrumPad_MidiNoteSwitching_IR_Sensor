@@ -1,0 +1,70 @@
+// DRUM PAD / PIEZO MIDI NOTE SWITCHING USING IR SENSOR 
+// Compiled by Sam Osborn Rassaby https://diy-e-percussion.tumblr.com/ 
+
+// This code switches the MIDI note sent by an electronic drum pad (or just a piezo) using an IR sensor to detect an obstacle,
+// in this case the obstacle being the hand playing the pad. Therefore you can change to a different note by striking the edge of the pad or striking within
+// the range of the sensor. This will change depending on your sensor, but I set mine to be from about halfway up my pad. 
+// Each note remains velocity sensitive, and you can set velocity layering etc. for each inside your DAW
+
+// The pad triggering code is based on the code 'Simple Sensing' from Ryo Kosaka's HelloDrum arduino library -- https://github.com/RyoKosaka/HelloDrum-arduino-Library 
+// check out his code liscene here: https://github.com/RyoKosaka/HelloDrum-arduino-Library/blob/master/LICENSE
+
+// and the IR sensor code based on this IR Obstacle Detector code from Muhammad Munir -- https://create.arduino.cc/projecthub/munir03125344286/ir-obstacle-detector-a70e29
+
+byte padNote = 46;             //  This is the initial MIDI note sent by the drum pad / piezo
+
+byte SNARE[6] = {
+    100, //sensitivity (1-100)
+    10,  //threshold (1-100)
+    10,  //scan time (1-)
+    30,  //mask time (1-)
+    padNote,  //note (0-127)
+    1    //curve type (0-4)
+};
+
+#include <MIDI.h>
+#include <hellodrum.h>
+MIDI_CREATE_DEFAULT_INSTANCE();
+
+HelloDrum snare(0);             // The pad is being referred to as 'snare' to work with Ryo's code, and connected to the A0 pin.
+
+int obstaclePin = 8;            // The digital pin that is recieving the signal from the IR sensor
+int hasObstacle = HIGH;         // This is the default state for the sensor to not read any obstacle
+
+void setup()
+{
+  MIDI.begin();
+  Serial.begin(9600);           // This is setup to work with MIDI over USB using Hairless MIDI, you can change this to use a physical MIDI OUT port.
+                                
+  snare.setCurve(SNARE[5]);      // Set Curve Type  - this is a more complicated part of Ryo's code to use different velocity curves
+  
+  pinMode(obstaclePin, INPUT);   // Defines the obstacle pin as an input
+}
+
+void loop() {
+
+  hasObstacle = digitalRead(obstaclePin);   
+  if (hasObstacle == LOW)                     // If there is an obstacle detected...
+  {
+     padNote = 42;                          // Change the MIDI note sent by the pad to our alternate note
+     delay(2);  
+  }
+  else
+  {
+    padNote = 46;                         // Set the MIDI note sent by the pad back to our original note
+   delay(2);
+  }
+
+  //Piezo sensing is done in this line. And it is returned as a velocity of 127 stages.
+  
+  snare.singlePiezo(SNARE[0], SNARE[1], SNARE[2], SNARE[3]);
+
+  //MIDI signals are transmitted with this IF statement.
+  //For each piezo, one IF statement is required
+  
+  if (snare.hit == true)
+  {
+    MIDI.sendNoteOn(padNote, snare.velocity, 10); //(note, velocity, channel)
+    MIDI.sendNoteOff(padNote, 0, 10);
+  }
+}
